@@ -1,0 +1,85 @@
+---
+title: "asset alloc"
+author: "zwl"
+date: "27 September 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+
+```{r load, echo=FALSE}
+fred <- read.csv('~/data/fred_md_preproc.csv')
+fred$X <- as.Date(fred$X, format='%m/%d/%Y')
+
+# take out s&p columns
+fred2 <- fred %>% select(-c(S.P.500, S.P..indust, S.P.div.yield, S.P.PE.ratio))
+
+# find out how many NAs per example
+flag <- is.na(fred2)
+na.count <- apply(flag, 1, sum)
+plot(x=fred2$X, y=na.count)
+```
+
+```{r na.cols}
+# find rows with less than 6 na columns
+row.flag <- na.count < 6
+fred2 <- fred2[row.flag,]
+dim(fred2)
+
+# find which columns have NA
+col.flag <- is.na(fred2)
+na.cols <- apply(col.flag, 2, sum)
+# 5 columns have NA values
+fred3 <- fred2[, na.cols > 0]
+str(fred3)
+```
+
+These columns with NA are:
+
+* ACOGNO, New orders for consumer goods, starts 1992/3
+* ANDENOx, New orders for durable goods, 1968/3
+* TWEXMMTH, Trade weighted USD index, 1973/2
+* UMCSENTx, Consumer Sentiment Index, 1978/2
+* VXO CBOE S&P 100, starts 1962/7
+
+For each column, find out when the data series started. 
+
+```{r na}
+na.df <- cbind(X=fred2$X, fred3)
+# convert to long format
+na.long <- gather(na.df, field, value, ACOGNO:VXOCLSx)
+
+na.long %>% 
+  # Convert variable to factor, so we can use complete later. We do this within
+  # group_by, because we want to operate by level of variable
+  group_by(field=factor(field)) %>% 
+  # Remove all rows of variable if there aren't any rows with values==0
+  # filter(any(value==0)) %>% 
+  # Remove all rows with values != 0
+  # filter(value != 0) %>% 
+  filter(!is.na(value)) %>%
+  # Keep the first row of each variable, after sorting by Date
+  # This gives us the first non-zero row
+  arrange(X) %>% 
+  slice(1) %>% 
+  # Use complete to bring back a row for any level of variable that
+  # didn't start with any rows with values==0
+  ungroup() %>% 
+  complete(field)
+```
+
+If we remove New Orders for Consumer Goods, we can go back to 1978/2. 
+Or, we try to go to 1962 by removing others. 
+
+```{r final.prep}
+fred4 <- fred2 %>% select(-c(ACOGNO, ANDENOx, TWEXMMTH, UMCSENTx))
+fred5 <- fred4 %>% na.omit
+head(fred5$X)
+sum(is.na(fred5))
+```
+
+Now we can use this for other analysis.
